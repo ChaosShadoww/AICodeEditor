@@ -84,6 +84,16 @@ var layoutConfig = {
                     readOnly: true
                 }
             }]
+        }, {
+            type: "component",
+            width: 25,
+            componentName: "assistant",
+            id: "assistant",
+            title: "Code Assistant",
+            isClosable: true,
+            componentState: {
+                readOnly: false
+            }
         }]
     }]
 };
@@ -580,8 +590,37 @@ document.addEventListener("DOMContentLoaded", async function () {
                 minimap: {
                     enabled: false
                 }
+            }); 
+        });
+
+        layout.registerComponent("assistant", function (container, state) {
+            let assistantUI = document.createElement("div");
+            assistantUI.innerHTML = `
+                <div id="assistant-container">
+                    <textarea id="assistant-input" placeholder="Ask a question..."></textarea>
+                    <button id="assistant-submit">Ask</button>
+                    <div id="assistant-response"></div>
+                </div>
+            `;
+            
+            container.getElement()[0].appendChild(assistantUI);
+            
+            document.getElementById("assistant-submit").addEventListener("click", async function () {
+                let question = document.getElementById("assistant-input").value;
+                let responseContainer = document.getElementById("assistant-response");
+                
+                responseContainer.innerHTML = "Thinking...";
+                
+                let response = await fetchAIResponse(question);
+                responseContainer.innerHTML = response;
             });
         });
+
+        async function fetchAIResponse(question) {
+            // Placeholder function to integrate AI model
+            return `AI response to: "${question}"`;
+        }
+        
 
         layout.on("initialised", function () {
             setDefaults();
