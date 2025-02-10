@@ -654,9 +654,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             aiContainer.appendChild(responseBox);
         });
         
-
-
-        const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+        const GEMINI_API_KEY ="AIzaSyC5lnNza--__NYXKB1Stf31Y7iSv2EBb9k"; 
 
         async function sendToGemini(query) {
             try {
