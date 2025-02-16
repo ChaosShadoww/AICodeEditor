@@ -161,18 +161,13 @@ function handleResult(data) {
 
     $runBtn.removeClass("loading");
 
-    if (status.id === 6) {
-        let errorMessage = compileOutput;
-        let sourceCode = sourceEditor.getValue();
+    // Call AI fix suggestion asynchronously without awaiting
+    handleCompilationError(data).then(() => {
+        console.log("AI fix suggestion process completed.");
+    }).catch(error => {
+        console.error("Error handling compilation error:", error);
+    });
 
-        stdoutEditor.setValue(`Compilation Error:\n${errorMessage}\n\nAI is suggesting a fix...`);
-
-        // Get AI-generated fix suggestion
-        let fixSuggestion = await suggestFix(errorMessage, sourceCode);
-
-        stdoutEditor.setValue(`Compilation Error:\n${errorMessage}\n\nSuggested Fix:\n${fixSuggestion}`);
-
-    }
     window.top.postMessage(JSON.parse(JSON.stringify({
         event: "postExecution",
         status: data.status,
@@ -180,6 +175,31 @@ function handleResult(data) {
         memory: data.memory,
         output: output
     })), "*");
+}
+
+async function handleCompilationError(data) {
+    if (data.status.id !== 6) return; // Only proceed if it's a compilation error
+
+    let errorMessage = decode(data.compile_output);
+    let sourceCode = sourceEditor.getValue();
+
+    stdoutEditor.setValue(`Compilation Error:\n${errorMessage}\n\nAI is analyzing the issue...`);
+
+    // Call AI model for debugging suggestions
+    let fixSuggestion = await suggestFix(errorMessage, sourceCode);
+
+    stdoutEditor.setValue(`Compilation Error:\n${errorMessage}\n\nSuggested Fix:\n${fixSuggestion}`);
+
+    // Create an "Apply Fix" button
+    let applyFixButton = document.createElement("button");
+    applyFixButton.innerText = "Apply Fix";
+    applyFixButton.style = "margin-top: 10px; padding: 5px; background: green; color: white; border: none; cursor: pointer;";
+
+    applyFixButton.onclick = function () {
+        sourceEditor.setValue(fixSuggestion);
+    };
+
+    stdoutEditor.getDomNode().appendChild(applyFixButton);
 }
 
 //function to suggest a fix the user compille error
