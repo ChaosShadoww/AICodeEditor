@@ -1,6 +1,6 @@
-import { IS_PUTER } from "./puter.js";
+import { usePuter } from "./puter.js";
 
-const API_KEY = ""; // Get yours at https://platform.sulu.sh/apis/judge0
+const API_KEY = "sk_live_7a9QeXNP7cfc5bDBmQ5OHEjPNAUtphpb"; 
 
 const AUTH_HEADERS = API_KEY ? {
     "Authorization": `Bearer ${API_KEY}`
@@ -31,7 +31,7 @@ var fontSize = 13;
 
 var layout;
 
-var sourceEditor;
+export var sourceEditor;
 var stdinEditor;
 var stdoutEditor;
 
@@ -86,10 +86,10 @@ var layoutConfig = {
             }]
         }, {
             type: "component",
-            width: 25,
-            componentName: "assistant",
-            id: "assistant",
-            title: "Code Assistant",
+            height: 66,
+            componentName: "ai",
+            id: "ai",
+            title: "AI Coding Assistant",
             isClosable: true,
             componentState: {
                 readOnly: false
@@ -135,7 +135,7 @@ function showHttpError(jqXHR) {
 
 function handleRunError(jqXHR) {
     showHttpError(jqXHR);
-    $runBtn.removeClass("disabled");
+    $runBtn.removeClass("loading");
 
     window.top.postMessage(JSON.parse(JSON.stringify({
         event: "runError",
@@ -159,8 +159,20 @@ function handleResult(data) {
 
     stdoutEditor.setValue(output);
 
-    $runBtn.removeClass("disabled");
+    $runBtn.removeClass("loading");
 
+    if (status.id === 6) {
+        let errorMessage = compileOutput;
+        let sourceCode = sourceEditor.getValue();
+
+        stdoutEditor.setValue(`Compilation Error:\n${errorMessage}\n\nAI is suggesting a fix...`);
+
+        // Get AI-generated fix suggestion
+        let fixSuggestion = await suggestFix(errorMessage, sourceCode);
+
+        stdoutEditor.setValue(`Compilation Error:\n${errorMessage}\n\nSuggested Fix:\n${fixSuggestion}`);
+
+    }
     window.top.postMessage(JSON.parse(JSON.stringify({
         event: "postExecution",
         status: data.status,
@@ -168,6 +180,25 @@ function handleResult(data) {
         memory: data.memory,
         output: output
     })), "*");
+}
+
+//function to suggest a fix the user compille error
+async function suggestFix(errorMessage, sourceCode) {
+    const prompt = `The following code has a compilation error:\n\n${sourceCode}\n\nError Message:\n${errorMessage}\n\nSuggest a fix with an explanation.`;
+    
+    try {
+        let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] })
+        });
+
+        let data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "No fix suggested.";
+    } catch (error) {
+        console.error("AI Suggestion Error:", error);
+        return "Error retrieving fix suggestion.";
+    }
 }
 
 async function getSelectedLanguage() {
@@ -187,7 +218,7 @@ function run() {
         showError("Error", "Source code can't be empty!");
         return;
     } else {
-        $runBtn.addClass("disabled");
+        $runBtn.addClass("loading");
     }
 
     stdoutEditor.setValue("");
@@ -216,6 +247,8 @@ function run() {
         command_line_arguments: commandLineArguments,
         redirect_stderr_to_stdout: true
     };
+
+    
 
     let sendRequest = function (data) {
         window.top.postMessage(JSON.parse(JSON.stringify({
@@ -319,7 +352,7 @@ function saveFile(content, filename) {
 }
 
 async function openAction() {
-    if (IS_PUTER) {
+    if (usePuter()) {
         gPuterFile = await puter.ui.showOpenFilePicker();
         openFile(await (await gPuterFile.read()).text(), gPuterFile.name);
     } else {
@@ -328,7 +361,7 @@ async function openAction() {
 }
 
 async function saveAction() {
-    if (IS_PUTER) {
+    if (usePuter()) {
         if (gPuterFile) {
             gPuterFile.write(sourceEditor.getValue());
         } else {
@@ -473,7 +506,7 @@ function refreshLayoutSize() {
 
 window.addEventListener("resize", refreshLayoutSize);
 document.addEventListener("DOMContentLoaded", async function () {
-    $("#select-language").dropdown();
+    $(".ui.selection.dropdown").dropdown();
     $("[data-content]").popup({
         lastResort: "left center"
     });
@@ -517,33 +550,37 @@ document.addEventListener("DOMContentLoaded", async function () {
     $(document).on("keydown", "body", function (e) {
         if (e.metaKey || e.ctrlKey) {
             switch (e.key) {
-                case "Enter": // Ctrl+Enter, Cmd+Enter
+                case "Enter":
                     e.preventDefault();
                     run();
                     break;
-                case "s": // Ctrl+S, Cmd+S
+                case "s":
                     e.preventDefault();
-                    save();
+                    saveAction();
                     break;
-                case "o": // Ctrl+O, Cmd+O
+                case "o":
                     e.preventDefault();
-                    open();
+                    openAction();
                     break;
-                case "+": // Ctrl+Plus
-                case "=": // Some layouts use '=' for '+'
+                case "+":
+                case "=":
                     e.preventDefault();
                     fontSize += 1;
                     setFontSizeForAllEditors(fontSize);
                     break;
-                case "-": // Ctrl+Minus
+                case "-":
                     e.preventDefault();
                     fontSize -= 1;
                     setFontSizeForAllEditors(fontSize);
                     break;
-                case "0": // Ctrl+0
+                case "0":
                     e.preventDefault();
                     fontSize = 13;
                     setFontSizeForAllEditors(fontSize);
+                    break;
+                case "`":
+                    e.preventDefault();
+                    sourceEditor.focus();
                     break;
             }
         }
@@ -590,36 +627,82 @@ document.addEventListener("DOMContentLoaded", async function () {
                 minimap: {
                     enabled: false
                 }
-            }); 
-        });
-
-        layout.registerComponent("assistant", function (container, state) {
-            let assistantUI = document.createElement("div");
-            assistantUI.innerHTML = `
-                <div id="assistant-container">
-                    <textarea id="assistant-input" placeholder="Ask a question..."></textarea>
-                    <button id="assistant-submit">Ask</button>
-                    <div id="assistant-response"></div>
-                </div>
-            `;
-            
-            container.getElement()[0].appendChild(assistantUI);
-            
-            document.getElementById("assistant-submit").addEventListener("click", async function () {
-                let question = document.getElementById("assistant-input").value;
-                let responseContainer = document.getElementById("assistant-response");
-                
-                responseContainer.innerHTML = "Thinking...";
-                
-                let response = await fetchAIResponse(question);
-                responseContainer.innerHTML = response;
             });
         });
 
-        async function fetchAIResponse(question) {
-            // Placeholder function to integrate AI model
-            return `AI response to: "${question}"`;
+            
+            
+
+        layout.registerComponent("ai", function (container, state) {
+            let aiContainer = container.getElement()[0];
+            const chatContainer = document.createElement("div");
+            chatContainer.className = "chat-container h-pull flex flex-col bg-[#lelele]";
+            
+            aiContainer.innerHTML = `
+        <div class="chat-container h-pull flex flex-col bg-[#lelele]">
+            <textarea id="ai-textbox" placeholder="Ask the AI Assistant..." 
+                style="width: 100%; height: 100px; margin-bottom: 10px; padding: 8px;
+                border: 1px solid #ccc; border-radius: 4px; resize: vertical;"></textarea>
+
+            <button id="send-button" 
+                style="display: block; margin-top: 5px; padding: 10px; 
+                background-color: #007bff; color: white; border: none; 
+                border-radius: 4px; cursor: pointer;">
+                Send
+            </button>
+
+            <div id="ai-response" 
+                style="width: 100%; height: 200px; overflow-y: auto; border: 1px solid #ddd;
+                padding: 8px; border-radius: 4px; background: #f9f9f9;">
+                AI Response will appear here...
+            </div>
+        </div>
+        `;
+
+
+        let textBox = aiContainer.querySelector("#ai-textbox");
+        let sendButton = aiContainer.querySelector("#send-button");
+        let responseBox = aiContainer.querySelector("#ai-response");
+        
+            sendButton.addEventListener("click", async function () {
+                let query = textBox.value.trim();
+                if (query !== "") {
+                    responseBox.innerText = "Thinking...";
+                    textBox.value = ""; // Clear input after sending
+                    let aiResponse = await sendToLLM(query);
+                    responseBox.innerText = aiResponse || "No response received.";
+                }
+            });
+        
+            // Append elements to AI assistant panel
+            aiContainer.appendChild(textBox);
+            aiContainer.appendChild(sendButton);
+            aiContainer.appendChild(responseBox);
+        });
+        
+        const GEMINI_API_KEY ="AIzaSyC5lnNza--__NYXKB1Stf31Y7iSv2EBb9k"; 
+
+        async function sendToGemini(query) {
+            try {
+                let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        contents: [{ role: "user", parts: [{ text: query }] }]
+                    })
+                });
+
+                let data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response received.";
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return "Error connecting to AI model.";
+            }
         }
+
+        
         
 
         layout.on("initialised", function () {
@@ -644,7 +727,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         e.innerText = `${superKey}${e.innerText}`;
     });
 
-    if (IS_PUTER) {
+    if (usePuter()) {
         puter.ui.onLaunchedWithItems(async function (items) {
             gPuterFile = items[0];
             openFile(await (await gPuterFile.read()).text(), gPuterFile.name);
